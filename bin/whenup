@@ -1,0 +1,40 @@
+#!/usr/bin/env ruby
+
+require 'dotenv'
+require 'loofah'
+require 'rmeetup'
+require 'whenhub'
+
+Dotenv.load
+
+meetup_client = RMeetup::Client.new do |config|
+  config.api_key = ENV['MEETUP_API_KEY']
+end
+
+whenhub_client = WhenHub.client(access_token: ENV['WHENHUB_TOKEN'])
+
+meetup_group = meetup_client.fetch(:groups, group_urlname: ARGV.last).first
+meetup_events = meetup_client.fetch(:events, group_urlname: ARGV.last)
+
+schedule = whenhub_client.schedules.create(
+  name: meetup_group.group['name'],
+  description: Loofah.fragment(meetup_group.group['description']).text,
+  scope: 'private'
+)
+
+meetup_events.each do |meetup_event|
+  schedule.events.create(
+    name: meetup_event.event['name'],
+    description: Loofah.fragment(meetup_event.event['description']).text,
+    when: {
+      'period' => 'minute',
+      'startDate' => Time.at(meetup_event.event['time'] / 1000).strftime('%Y-%m-%dT%H:%M:%S%z'),
+      'startTimezone' => meetup_group.group['timezone'],
+      'endDate' => nil,
+      'endTimezone' => nil
+    }
+  )
+end
+
+puts "Created Schedule: #{schedule.id} with #{meetup_events.count} events."
+puts "https://studio.whenhub.com/studio#/apps/schedules/#{schedule.id}/events"
